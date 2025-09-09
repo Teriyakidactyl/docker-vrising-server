@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  vrising-server:
+    # This tells Docker to look for the Dockerfile in the current directory and build it.
+    build: .
+    container_name: vrising-server
+    restart: unless-stopped
+    tty: true
+
+    environment:
+      # --- Server configuration ---
+      # Match these to your preferences.
+      - SERVER_NAME=My V-Rising Docker Server
+      - WORLD_NAME=MyServerWorld
+      - SERVER_PASS=SuperSecret
+      - SERVER_PUBLIC=true # 'true' or 'false'
+      - SERVER_PORT=9876
+      - QUERY_PORT=9877
+
+    volumes:
+      # Mounts a local directory or Docker volume to store game saves and settings.
+      - vrising_data:/world # This maps to $WORLD_FILES inside the container.
+      # Mounts a volume for the server application files downloaded by SteamCMD.
+      - vrising_app:/app # This maps to $APP_FILES inside the container.
+
+    ports:
+      # Maps the container ports to your host machine.
+      - "9876:9876/udp" # Main UDP Game Port
+      - "9877:9877/udp" # Query Port
+
+volumes:
+  vrising_data:
+    name: vrising_world_data
+  vrising_app:
+    name: vrising_app_data

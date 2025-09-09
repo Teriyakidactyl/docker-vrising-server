@@ -1,0 +1,51 @@
+name: V-Rising Server CI
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+  pull_request:
+    branches:
+      - main
+      - dev
+  workflow_dispatch:
+
+jobs:
+  build-server:
+    name: Build V-Rising Server
+    strategy:
+      matrix:
+        # Defines the different combinations of architectures and Debian versions to build for.
+        include:
+          - arch: "amd64"
+            debian_version: "bookworm"
+          - arch: "arm64"
+            debian_version: "bookworm"
+          # You can add more combinations here, for example, for the 'trixie' release.
+          # - arch: "amd64"
+          #   debian_version: "trixie"
+          # - arch: "arm64"
+          #   debian_version: "trixie"
+
+    uses: ./.github/workflows/docker-publish.yml
+    with:
+      # --- Basic Information ---
+      app_name: "vrising"
+      app_port: 9876
+      architecture: ${{ matrix.arch }}
+      debian_version_codename: ${{ matrix.debian_version }}
+
+      # --- Compatibility Layer ---
+      # V-Rising requires Wine to run, as it's a Windows-based server.
+      compat_layer: "wine"
+      # Specify the Wine version to use. This will be passed to your base image build process.
+      wine_version: "9.13" # Or any other version you wish to target
+
+      # --- Box86/Box64 Versions (for ARM builds) ---
+      # These versions are used when building for the arm64 architecture.
+      # You can update these as needed.
+      box86_version: "0.3.5"
+      box64_version: "0.3.5"
+
+    secrets: inherit
