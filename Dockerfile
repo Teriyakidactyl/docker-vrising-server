@@ -2,7 +2,7 @@
 # This Dockerfile leverages the base image that provides SteamCMD, architecture detection,
 # and compatibility layers like Wine, which is required for V-Rising.
 
-# Reference: https://github.com/StunlockStudios/vrising-dedicated-server-instructions
+# Reference: https://github.com/StunlockStudios/vrising-dedicated-server-instructions/blob/master/1.1.x-pc/INSTRUCTIONS.md
 # Wine: https://steamcommunity.com/sharedfiles/filedetails/?id=2880599658
 
 # The BASE_TAG argument allows specifying which version of the base image to use.
@@ -44,8 +44,10 @@ ENV \
     SERVER_DESCRIPTION="A V-Rising Server powered by Teriyakidactyl" \
     SERVER_PASS="MySecretPassword" \
     WORLD_NAME="world1" \
+    \
     SERVER_PORT="9876" \
     QUERY_PORT="9877" \
+    \
     MAX_USERS="40" \
     LIST_ON_STEAM="true" \
     LIST_ON_EOS="true" \
@@ -66,9 +68,9 @@ ENV \
 # --- Define the command line arguments for the server ---
 ENV APP_ARGS='\
 -persistentDataPath $WORLD_FILES \
--serverName "$SERVER_NAME" \
--logFile "$LOGS/$APP_EXE.log"'
+-serverName "$SERVER_NAME"'
 
+# -logFile "$LOGS/$APP_EXE.log"'
 # -saveName "$WORLD_NAME" \
 # -password "$SERVER_PASS" \
 
