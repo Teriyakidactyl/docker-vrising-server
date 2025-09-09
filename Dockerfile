@@ -21,12 +21,26 @@ USER root
 RUN apt-get update && apt-get install -y --no-install-recommends jq && \
     # Clean up apt cache to keep image size down
     rm -rf /var/lib/apt/lists/* && \
+    # Create persistent directories for settings and all logs
     mkdir -p "$WORLD_FILES/Settings" \
+             "$WORLD_FILES/logs" \
              "$APP_FILES/VRisingServer_Data/StreamingAssets/Settings" && \
-    # Link the persistent Settings folder to where the game expects to find it.
+    # Link the persistent Settings folder to where the game expects it
     ln -sf "$WORLD_FILES/Settings" "$APP_FILES/VRisingServer_Data/StreamingAssets/Settings" && \
+    \
+    # --- LOGGING SETUP (Conan-Style) ---
+    # 1. Link the app's default log directory to our persistent logs folder.
+    # This captures all miscellaneous logs (connection, appinfo, etc.).
+    ln -sf "$WORLD_FILES/logs" "$APP_FILES/logs" && \
+    # 2. Create a placeholder for the main server log in the persistent volume.
+    touch "$WORLD_FILES/logs/VRisingServer.exe.log" && \
+    # 3. Create a stable symlink from the container's main log directory ($LOGS)
+    # to the main log file. The base image's `tail` command watches this link.
+    ln -sf "$WORLD_FILES/logs/VRisingServer.exe.log" "$LOGS/VRisingServer.exe.log" && \
+    \
     # Ensure the container user owns all relevant directories.
     chown -R ${CONTAINER_USER}:${CONTAINER_USER} "$WORLD_FILES" "$APP_FILES" "$LOGS"
+
 
 # --- Switch back to the non-root user for security ---
 USER ${CONTAINER_USER}
@@ -68,15 +82,15 @@ ENV \
 # --- Define the command line arguments for the server ---
 ENV APP_ARGS='\
 -persistentDataPath $WORLD_FILES \
--serverName "$SERVER_NAME"'
+-logFile "$WORLD_FILES/logs/$APP_EXE.log"'
 
-# -logFile "$LOGS/$APP_EXE.log"'
 # -saveName "$WORLD_NAME" \
 # -password "$SERVER_PASS" \
+# -serverName "$SERVER_NAME" \
 
 # Copy game-specific hook scripts into the container
 COPY --chown=${CONTAINER_USER}:${CONTAINER_USER} scripts/container/hooks/pre-startup/30_vrising_functions.sh ${HOOK_DIRECTORIES}/pre-startup/
 
 # --- Expose V-Rising ports ---
-EXPOSE 9876/udp 9877/udp
+EXPOSE $SERVER_PORT/udp $QUERY_PORT/udp
 

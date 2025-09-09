@@ -103,7 +103,6 @@ if [ -f "$GAME_SETTINGS_FILE" ]; then
     apply_settings "$GAME_SETTINGS_FILE" game_settings_map
 fi
 
-
 # --- Log Final Configuration ---
 log "V-Rising configuration applied. Final settings:" "30_vrising_functions.sh"
 if [ -f "$HOST_SETTINGS_FILE" ]; then
