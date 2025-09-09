@@ -31,23 +31,28 @@ fi
 
 # --- Apply Settings from Environment Variables ---
 # Use 'jq' to update the JSON configuration files with values from environment variables.
-# This is more robust than simple text replacement.
 
+# Apply updates to ServerHostSettings.json
 if command -v jq &> /dev/null && [ -f "$HOST_SETTINGS_FILE" ]; then
     log "Updating ServerHostSettings.json from environment variables..." "30_vrising_config.sh"
     
-    # Create a temporary file to hold the modified JSON
     TMP_JSON=$(mktemp)
 
-    # Sequentially apply updates using jq
+    # Sequentially apply updates to ServerHostSettings.json
     jq --arg name "$SERVER_NAME" '.Name = $name' "$HOST_SETTINGS_FILE" | \
-    jq --arg desc "Running on Teriyakidactyl Base Image" '.Description = $desc' | \
+    jq --arg desc "$SERVER_DESCRIPTION" '.Description = $desc' | \
     jq --argjson port "$SERVER_PORT" '.Port = $port' | \
     jq --argjson queryPort "$QUERY_PORT" '.QueryPort = $queryPort' | \
     jq --arg saveName "$WORLD_NAME" '.SaveName = $saveName' | \
-    jq --arg password "$SERVER_PASS" '.Password = $password' > "$TMP_JSON"
+    jq --arg password "$SERVER_PASS" '.Password = $password' | \
+    jq --argjson maxUsers "$MAX_USERS" '.MaxConnectedUsers = $maxUsers' | \
+    jq --argjson listOnSteam "$LIST_ON_STEAM" '.ListOnSteam = $listOnSteam' | \
+    jq --argjson listOnEOS "$LIST_ON_EOS" '.ListOnEOS = $listOnEOS' | \
+    jq --argjson secure "$SERVER_SECURE" '.Secure = $secure' | \
+    jq --argjson enabled "${RCON_ENABLED:-false}" '.Rcon.Enabled = $enabled' | \
+    jq --arg password "${RCON_PASS:-""}" '.Rcon.Password = $password' | \
+    jq --argjson port "${RCON_PORT:-25575}" '.Rcon.Port = $port' > "$TMP_JSON"
 
-    # Overwrite the original file with the updated one
     mv "$TMP_JSON" "$HOST_SETTINGS_FILE"
     
     log "ServerHostSettings.json updated successfully." "30_vrising_config.sh"
@@ -55,6 +60,27 @@ else
     log "Warning: 'jq' is not installed or ServerHostSettings.json not found. Cannot apply ENV settings." "30_vrising_config.sh"
 fi
 
-# You can add similar logic here to modify ServerGameSettings.json if needed.
+# Apply updates to ServerGameSettings.json
+if command -v jq &> /dev/null && [ -f "$GAME_SETTINGS_FILE" ]; then
+    log "Updating ServerGameSettings.json from environment variables..." "30_vrising_config.sh"
 
-log "V-Rising configuration applied." "30_vrising_config.sh"
+    TMP_JSON=$(mktemp)
+
+    # Sequentially apply updates to ServerGameSettings.json
+    jq --arg gameMode "$GAME_MODE" '.GameModeType = $gameMode' "$GAME_SETTINGS_FILE" | \
+    jq --argjson clanSize "$CLAN_SIZE" '.ClanSize = $clanSize' | \
+    jq --arg preset "${GAME_SETTINGS_PRESET:-""}" '.GameSettingsPreset = $preset' > "$TMP_JSON"
+
+    mv "$TMP_JSON" "$GAME_SETTINGS_FILE"
+
+    log "ServerGameSettings.json updated successfully." "30_vrising_config.sh"
+else
+    log "Warning: 'jq' is not installed or ServerGameSettings.json not found. Cannot apply ENV settings." "30_vrising_config.sh"
+fi
+
+# --- Log Final Configuration ---
+log "V-Rising configuration applied. Final settings:" "30_vrising_config.sh"
+log "--- ServerHostSettings.json ---" "30_vrising_config.sh"
+cat "$HOST_SETTINGS_FILE" | log_stdout "30_vrising_config.sh"
+log "--- ServerGameSettings.json ---" "30_vrising_config.sh"
+cat "$GAME_SETTINGS_FILE" | log_stdout "30_vrising_config.sh"
