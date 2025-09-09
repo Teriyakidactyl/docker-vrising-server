@@ -54,7 +54,7 @@ RUN apt-get update && apt-get install -y jq && \
     chown -R ${CONTAINER_USER}:${CONTAINER_USER} "$WORLD_FILES" "$APP_FILES" "$LOGS"
 
 # Copy game-specific hook scripts into the container
-COPY --chown=${CONTAINER_USER}:${CONTAINER_USER} scripts/container/hooks/pre-startup/30_vrising_config.sh ${HOOK_DIRECTORIES}/pre-startup/
+COPY --chown=${CONTAINER_USER}:${CONTAINER_USER} scripts/container/hooks/pre-startup/30_vrising_functions.sh ${HOOK_DIRECTORIES}/pre-startup/
 
 # --- Expose V-Rising ports ---
 EXPOSE 9876/udp 9877/udp
