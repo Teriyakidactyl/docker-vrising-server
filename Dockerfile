@@ -3,7 +3,7 @@
 # and compatibility layers like Wine, which is required for V-Rising.
 
 # The BASE_TAG argument allows specifying which version of the base image to use.
-ARG BASE_TAG=bookworm-wine-staging-9.13
+ARG BASE_TAG=trixie-20250407-slim_wine-staging-10.5
 FROM ghcr.io/teriyakidactyl/docker-steamcmd-server:${BASE_TAG}
 
 # Labels for metadata
