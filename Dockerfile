@@ -32,15 +32,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends jq && \
     # 1. Link the app's default log directory to our persistent logs folder.
     # This captures all miscellaneous logs (connection, appinfo, etc.).
     ln -sf "$WORLD_FILES/logs" "$APP_FILES/logs" && \
-    # 2. Create a placeholder for the main server log in the persistent volume.
-    touch "$WORLD_FILES/logs/VRisingServer.exe.log" && \
-    # 3. Create a stable symlink from the container's main log directory ($LOGS)
-    # to the main log file. The base image's `tail` command watches this link.
-    ln -sf "$WORLD_FILES/logs/VRisingServer.exe.log" "$LOGS/VRisingServer.exe.log" && \
+    # 2. **NEW**: Link the entire persistent logs directory into the main container log directory.
+    # The base image's tail script will find and tail all *.log files within this link.
+    ln -sf "$WORLD_FILES/logs" "$LOGS/vrising" && \
     \
     # Ensure the container user owns all relevant directories.
     chown -R ${CONTAINER_USER}:${CONTAINER_USER} "$WORLD_FILES" "$APP_FILES" "$LOGS"
-
 
 # --- Switch back to the non-root user for security ---
 USER ${CONTAINER_USER}
