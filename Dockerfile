@@ -21,19 +21,18 @@ USER root
 RUN apt-get update && apt-get install -y --no-install-recommends jq && \
     # Clean up apt cache to keep image size down
     rm -rf /var/lib/apt/lists/* && \
-    # Create persistent directories for settings and all logs
+    # Create persistent directories for settings, logs, and the Wine prefix
     mkdir -p "$WORLD_FILES/Settings" \
              "$WORLD_FILES/logs" \
+             "$WORLD_FILES/wineprefix" \
              "$APP_FILES/VRisingServer_Data/StreamingAssets/Settings" && \
     # Link the persistent Settings folder to where the game expects it
     ln -sf "$WORLD_FILES/Settings" "$APP_FILES/VRisingServer_Data/StreamingAssets/Settings" && \
     \
     # --- LOGGING SETUP (Conan-Style) ---
     # 1. Link the app's default log directory to our persistent logs folder.
-    # This captures all miscellaneous logs (connection, appinfo, etc.).
     ln -sf "$WORLD_FILES/logs" "$APP_FILES/logs" && \
-    # 2. **NEW**: Link the entire persistent logs directory into the main container log directory.
-    # The base image's tail script will find and tail all *.log files within this link.
+    # 2. Link the entire persistent logs directory into the main container log directory.
     ln -sf "$WORLD_FILES/logs" "$LOGS/vrising" && \
     \
     # Ensure the container user owns all relevant directories.
