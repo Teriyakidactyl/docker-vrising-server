@@ -1,51 +1,88 @@
-name: V-Rising Server CI
+name: Reusable Docker Build and Publish
 
 on:
-  push:
-    branches:
-      - main
-      - dev
-  pull_request:
-    branches:
-      - main
-      - dev
-  workflow_dispatch:
-
-jobs:
-  build-server:
-    name: Build V-Rising Server
-    strategy:
-      matrix:
-        # Defines the different combinations of architectures and Debian versions to build for.
-        include:
-          - arch: "amd64"
-            debian_version: "bookworm"
-          - arch: "arm64"
-            debian_version: "bookworm"
-          # You can add more combinations here, for example, for the 'trixie' release.
-          # - arch: "amd64"
-          #   debian_version: "trixie"
-          # - arch: "arm64"
-          #   debian_version: "trixie"
-
-    uses: ./.github/workflows/docker-publish.yml
-    with:
+  workflow_call:
+    inputs:
       # --- Basic Information ---
-      app_name: "vrising"
-      app_port: 9876
-      architecture: ${{ matrix.arch }}
-      debian_version_codename: ${{ matrix.debian_version }}
+      app_name:
+        required: true
+        type: string
+      app_port:
+        required: true
+        type: number
+      architecture:
+        required: true
+        type: string
+      debian_version_codename:
+        required: true
+        type: string
 
       # --- Compatibility Layer ---
-      # V-Rising requires Wine to run, as it's a Windows-based server.
-      compat_layer: "wine"
-      # Specify the Wine version to use. This will be passed to your base image build process.
-      wine_version: "9.13" # Or any other version you wish to target
+      compat_layer:
+        required: false
+        type: string
+        default: "" # Defaults to no compatibility layer if not provided.
+      wine_version:
+        required: false
+        type: string
+        default: ""
 
-      # --- Box86/Box64 Versions (for ARM builds) ---
-      # These versions are used when building for the arm64 architecture.
-      # You can update these as needed.
-      box86_version: "0.3.5"
-      box64_version: "0.3.5"
+      # --- Box86/Box64 Versions ---
+      box86_version:
+        required: false
+        type: string
+        default: ""
+      box64_version:
+        required: false
+        type: string
+        default: ""
 
-    secrets: inherit
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+    # --- ADD THIS PERMISSIONS BLOCK ---
+    # This grants the GITHUB_TOKEN write permissions for packages,
+    # allowing the job to publish the Docker image to GHCR.
+    permissions:
+      contents: read
+      packages: write
+    # ------------------------------------
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GHCR_PAT }}
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v4
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/docker-${{ inputs.app_name }}-server
+
+      - name: Build and push
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          platforms: linux/${{ inputs.architecture }}
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            APP_NAME=${{ inputs.app_name }}
+            DEBIAN_VERSION_CODENAME=${{ inputs.debian_version_codename }}
+            COMPAT_LAYER=${{ inputs.compat_layer }}
+            WINE_VERSION=${{ inputs.wine_version }}
+            BOX86_VERSION=${{ inputs.box86_version }}
+            BOX64_VERSION=${{ inputs.box64_version }}
+
