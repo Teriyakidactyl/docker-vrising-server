@@ -2,6 +2,9 @@
 # This Dockerfile leverages the base image that provides SteamCMD, architecture detection,
 # and compatibility layers like Wine, which is required for V-Rising.
 
+# Reference: https://github.com/StunlockStudios/vrising-dedicated-server-instructions
+# Wine: https://steamcommunity.com/sharedfiles/filedetails/?id=2880599658
+
 # The BASE_TAG argument allows specifying which version of the base image to use.
 ARG BASE_TAG=trixie-20250407-slim_wine-staging-10.5
 FROM ghcr.io/teriyakidactyl/docker-steamcmd-server:${BASE_TAG}
