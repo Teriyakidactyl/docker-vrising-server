@@ -2,29 +2,21 @@
 # This Dockerfile leverages the base image that provides SteamCMD, architecture detection,
 # and compatibility layers like Wine, which is required for V-Rising.
 
-# The BASE_TAG and WINE_VERSION arguments allow specifying which versions of the base image and Wine to use.
-ARG BASE_TAG=bookworm
-ARG WINE_VERSION=9.13
+# The BASE_TAG argument allows specifying which version of the base image to use.
+ARG BASE_TAG=bookworm-wine-staging-9.13
 FROM ghcr.io/teriyakidactyl/docker-steamcmd-server:${BASE_TAG}
 
 # Labels for metadata
-LABEL org.opencontainers.image.title="V-Rising Server"
-LABEL org.opencontainers.image.description="V-Rising dedicated server based on docker-steamcmd-server"
-LABEL org.opencontainers.image.vendor="TeriyakiDactyl"
-LABEL game.title="V Rising"
-LABEL game.developer="Stunlock Studios"
-LABEL game.publisher="Stunlock Studios"
+LABEL org.opencontainers.image.title="V-Rising Server" \
+      org.opencontainers.image.description="V-Rising dedicated server based on docker-steamcmd-server" \
+      org.opencontainers.image.vendor="TeriyakiDactyl"
 
 # --- Game-specific environment variables ---
 ENV \
     # --- Game identification ---
-    # The application name
     APP_NAME="vrising" \
-    # The server executable file
     APP_EXE="VRisingServer.exe" \
-    # The Steam App ID for the dedicated server
     STEAM_SERVER_APPID="1829350" \
-    # The platform type for SteamCMD (V-Rising server is Windows)
     STEAM_PLATFORM_TYPE="windows" \
     \
     # --- Server configuration (defaults that can be overridden) ---
@@ -39,8 +31,6 @@ ENV \
     PERSISTENT_DATA_PATH="$WORLD_FILES/save-data"
 
 # --- Define the command line arguments for the server ---
-# We use environment variables to build the launch command.
-# NOTE: Single quotes are used to delay variable expansion until the container runs.
 ENV APP_ARGS='\
 -persistentDataPath $PERSISTENT_DATA_PATH \
 -serverName "$SERVER_NAME" \
@@ -48,7 +38,19 @@ ENV APP_ARGS='\
 -password "$SERVER_PASS" \
 -logFile "$LOGS/$APP_EXE.log"'
 
+# --- Create directories and symbolic links for persistence ---
+# This ensures that the server's configuration and save data, which it expects
+# in specific subdirectories, are written to the persistent /world volume.
+RUN mkdir -p "$WORLD_FILES/save-data" \
+             "$WORLD_FILES/Settings" \
+             "$APP_FILES/VRisingServer_Data/StreamingAssets/Settings" && \
+    # Link the persistent Settings folder to where the game expects to find it.
+    ln -sf "$WORLD_FILES/Settings" "$APP_FILES/VRisingServer_Data/StreamingAssets/Settings" && \
+    # Ensure the container user owns all relevant directories.
+    chown -R ${CONTAINER_USER}:${CONTAINER_USER} "$WORLD_FILES" "$APP_FILES" "$LOGS"
+
+# Copy game-specific hook scripts into the container
+COPY --chown=${CONTAINER_USER}:${CONTAINER_USER} scripts/container/hooks/pre-startup/30_vrising_config.sh ${HOOK_DIRECTORIES}/pre-startup/
+
 # --- Expose V-Rising ports ---
-# 9876 - Game port
-# 9877 - Query port
 EXPOSE 9876/udp 9877/udp
