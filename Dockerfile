@@ -2,9 +2,6 @@
 # This Dockerfile leverages the base image that provides SteamCMD, architecture detection,
 # and compatibility layers like Wine, which is required for V-Rising.
 
-# ref: https://github.com/TrueOsiris/docker-vrising
-# ref: https://github.com/StunlockStudios/vrising-dedicated-server-instructions
-
 # The BASE_TAG argument allows specifying which version of the base image to use.
 ARG BASE_TAG=trixie-20250407-slim_wine-staging-10.5
 FROM ghcr.io/teriyakidactyl/docker-steamcmd-server:${BASE_TAG}
@@ -13,6 +10,24 @@ FROM ghcr.io/teriyakidactyl/docker-steamcmd-server:${BASE_TAG}
 LABEL org.opencontainers.image.title="V-Rising Server" \
       org.opencontainers.image.description="V-Rising dedicated server based on docker-steamcmd-server" \
       org.opencontainers.image.vendor="TeriyakiDactyl"
+
+# --- Switch to ROOT user to install dependencies ---
+USER root
+
+# --- Install jq and create directories/links for persistence ---
+RUN apt-get update && apt-get install -y --no-install-recommends jq && \
+    # Clean up apt cache to keep image size down
+    rm -rf /var/lib/apt/lists/* && \
+    mkdir -p "$WORLD_FILES/save-data" \
+             "$WORLD_FILES/Settings" \
+             "$APP_FILES/VRisingServer_Data/StreamingAssets/Settings" && \
+    # Link the persistent Settings folder to where the game expects to find it.
+    ln -sf "$WORLD_FILES/Settings" "$APP_FILES/VRisingServer_Data/StreamingAssets/Settings" && \
+    # Ensure the container user owns all relevant directories.
+    chown -R ${CONTAINER_USER}:${CONTAINER_USER} "$WORLD_FILES" "$APP_FILES" "$LOGS"
+
+# --- Switch back to the non-root user for security ---
+USER ${CONTAINER_USER}
 
 # --- Game-specific environment variables ---
 ENV \
@@ -40,18 +55,6 @@ ENV APP_ARGS='\
 -saveName "$WORLD_NAME" \
 -password "$SERVER_PASS" \
 -logFile "$LOGS/$APP_EXE.log"'
-
-# --- Install jq and create directories/links for persistence ---
-# This ensures that the server's configuration and save data, which it expects
-# in specific subdirectories, are written to the persistent /world volume.
-RUN apt-get update && apt-get install -y jq && \
-    mkdir -p "$WORLD_FILES/save-data" \
-             "$WORLD_FILES/Settings" \
-             "$APP_FILES/VRisingServer_Data/StreamingAssets/Settings" && \
-    # Link the persistent Settings folder to where the game expects to find it.
-    ln -sf "$WORLD_FILES/Settings" "$APP_FILES/VRisingServer_Data/StreamingAssets/Settings" && \
-    # Ensure the container user owns all relevant directories.
-    chown -R ${CONTAINER_USER}:${CONTAINER_USER} "$WORLD_FILES" "$APP_FILES" "$LOGS"
 
 # Copy game-specific hook scripts into the container
 COPY --chown=${CONTAINER_USER}:${CONTAINER_USER} scripts/container/hooks/pre-startup/30_vrising_functions.sh ${HOOK_DIRECTORIES}/pre-startup/
