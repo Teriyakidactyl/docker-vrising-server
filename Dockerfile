@@ -21,8 +21,7 @@ USER root
 RUN apt-get update && apt-get install -y --no-install-recommends jq && \
     # Clean up apt cache to keep image size down
     rm -rf /var/lib/apt/lists/* && \
-    mkdir -p "$WORLD_FILES/save-data" \
-             "$WORLD_FILES/Settings" \
+    mkdir -p "$WORLD_FILES/Settings" \
              "$APP_FILES/VRisingServer_Data/StreamingAssets/Settings" && \
     # Link the persistent Settings folder to where the game expects to find it.
     ln -sf "$WORLD_FILES/Settings" "$APP_FILES/VRisingServer_Data/StreamingAssets/Settings" && \
@@ -45,15 +44,11 @@ ENV \
     SERVER_PASS="MySecretPassword" \
     WORLD_NAME="world1" \
     SERVER_PORT="9876" \
-    QUERY_PORT="9877" \
-    \
-    # --- Path for server settings and save data ---
-    # This path is inside the $WORLD_FILES volume mount.
-    PERSISTENT_DATA_PATH="$WORLD_FILES/save-data"
+    QUERY_PORT="9877"
 
 # --- Define the command line arguments for the server ---
 ENV APP_ARGS='\
--persistentDataPath $PERSISTENT_DATA_PATH \
+-persistentDataPath $WORLD_FILES \
 -serverName "$SERVER_NAME" \
 -saveName "$WORLD_NAME" \
 -password "$SERVER_PASS" \
