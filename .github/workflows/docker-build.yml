@@ -22,8 +22,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  REGISTRY_IMAGE: ghcr.io/${{ github.repository_owner }}/docker-vrising-server
-  BASE_REGISTRY_IMAGE: ghcr.io/${{ github.repository_owner }}/docker-steamcmd-server
+  # Hardcode the lowercase repository owner name
+  REGISTRY_IMAGE: ghcr.io/teriyakidactyl/docker-vrising-server
+  BASE_REGISTRY_IMAGE: ghcr.io/teriyakidactyl/docker-steamcmd-server
   # Define the base tags from steamcmd-server to build against
   MATRIX_BASE_TAGS: |
     trixie-20250407-slim_wine-staging-10.5
