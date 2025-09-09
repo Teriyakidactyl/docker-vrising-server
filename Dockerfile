@@ -39,20 +39,38 @@ ENV \
     STEAM_SERVER_APPID="1829350" \
     STEAM_PLATFORM_TYPE="windows" \
     \
-    # --- Server configuration (defaults that can be overridden) ---
+    # --- Server Host Settings Defaults ---
     SERVER_NAME="My V-Rising Server" \
+    SERVER_DESCRIPTION="A V-Rising Server powered by Teriyakidactyl" \
     SERVER_PASS="MySecretPassword" \
     WORLD_NAME="world1" \
     SERVER_PORT="9876" \
-    QUERY_PORT="9877"
+    QUERY_PORT="9877" \
+    MAX_USERS="40" \
+    LIST_ON_STEAM="true" \
+    LIST_ON_EOS="true" \
+    SERVER_SECURE="true" \
+    \
+    # --- RCON Defaults ---
+    RCON_ENABLED="false" \
+    RCON_PASS="" \
+    RCON_PORT="25575" \
+    \
+    # --- Server Game Settings Defaults ---
+    GAME_MODE="PvP" \
+    CLAN_SIZE="4" \
+    GAME_SETTINGS_PRESET="" \
+    LAN_MODE="true"
+
 
 # --- Define the command line arguments for the server ---
 ENV APP_ARGS='\
 -persistentDataPath $WORLD_FILES \
 -serverName "$SERVER_NAME" \
--saveName "$WORLD_NAME" \
--password "$SERVER_PASS" \
 -logFile "$LOGS/$APP_EXE.log"'
+
+# -saveName "$WORLD_NAME" \
+# -password "$SERVER_PASS" \
 
 # Copy game-specific hook scripts into the container
 COPY --chown=${CONTAINER_USER}:${CONTAINER_USER} scripts/container/hooks/pre-startup/30_vrising_functions.sh ${HOOK_DIRECTORIES}/pre-startup/
