@@ -24,8 +24,10 @@ concurrency:
 env:
   REGISTRY_IMAGE: ghcr.io/${{ github.repository_owner }}/docker-vrising-server
   BASE_REGISTRY_IMAGE: ghcr.io/${{ github.repository_owner }}/docker-steamcmd-server
+  # Define the base tags from steamcmd-server to build against
   MATRIX_BASE_TAGS: |
-    bookworm
+    trixie-20250407-slim_wine-staging-10.5
+    bookworm-20250407-slim_wine-staging-10.5
   MATRIX_PLATFORMS: |
     linux/amd64
     linux/arm64
@@ -76,31 +78,35 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GHCR_PAT }}
 
-      - name: Prepare tag and build arguments
-        id: prep-vars
+      - name: Prepare tag variables
+        id: prep-tags
         run: |
           ARCHITECTURE=$(echo ${{ matrix.platform }} | cut -d'/' -f2)
           echo "ARCHITECTURE=$ARCHITECTURE" >> $GITHUB_ENV
-
-          if [[ "${{ github.ref }}" == "refs/heads/dev" ]]; then
-            BASE_BRANCH_SUFFIX="_dev"
-          else
-            BASE_BRANCH_SUFFIX=""
-          fi
           
-          # This is the tag for the base image we are pulling
-          # Example: bookworm-wine-staging-9.13_dev-amd64
-          BASE_IMAGE_TAG="${{ matrix.base_tag }}-wine-staging-9.13${BASE_BRANCH_SUFFIX}-${ARCHITECTURE}"
-          echo "BASE_IMAGE_TAG=${BASE_IMAGE_TAG}" >> $GITHUB_ENV
-
-          # These are the tags for the new v-rising image we are building
-          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
-            echo "VERSIONED_TAG=${{ matrix.base_tag }}-$ARCHITECTURE" >> $GITHUB_ENV
-            if [[ "${{ matrix.base_tag }}" == "bookworm" ]]; then
-              echo "LATEST_ARCH_TAG=latest-$ARCHITECTURE" >> $GITHUB_ENV
-            fi
+          if [[ "${{ github.ref_name }}" == "dev" ]]; then
+            BRANCH_SUFFIX="_dev"
           else
-            echo "VERSIONED_TAG=${{ matrix.base_tag }}_dev-$ARCHITECTURE" >> $GITHUB_ENV
+            BRANCH_SUFFIX=""
+          fi
+          echo "BRANCH_SUFFIX=$BRANCH_SUFFIX" >> $GITHUB_ENV
+          
+          # This is the tag for the base image we are pulling from steamcmd-server
+          BASE_TAG_FOR_PULL="${{ matrix.base_tag }}${BRANCH_SUFFIX}-${ARCHITECTURE}"
+          echo "BASE_TAG_FOR_PULL=$BASE_TAG_FOR_PULL" >> $GITHUB_ENV
+          
+          # Generate tag parts for the new v-rising image we are building
+          # Full tag: trixie-20250407-slim_wine-staging-10.5-amd64
+          FULL_TAG="${{ matrix.base_tag }}${BRANCH_SUFFIX}-${ARCHITECTURE}"
+          echo "FULL_TAG=$FULL_TAG" >> $GITHUB_ENV
+
+          # Simple tag: trixie-amd64
+          SIMPLE_TAG=$(echo "${{ matrix.base_tag }}" | cut -d'-' -f1)${BRANCH_SUFFIX}-$ARCHITECTURE
+          echo "SIMPLE_TAG=$SIMPLE_TAG" >> $GITHUB_ENV
+
+          # Latest tag (only for main branch on default base image)
+          if [[ "${{ github.ref_name }}" == "main" && "${{ matrix.base_tag }}" == "trixie-20250407-slim_wine-staging-10.5" ]]; then
+            echo "LATEST_ARCH_TAG=latest-$ARCHITECTURE" >> $GITHUB_ENV
           fi
           
           echo "BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_ENV
@@ -111,7 +117,8 @@ jobs:
         with:
           images: ${{ env.REGISTRY_IMAGE }}
           tags: |
-            type=raw,value=${{ env.VERSIONED_TAG }}
+            type=raw,value=${{ env.FULL_TAG }}
+            type=raw,value=${{ env.SIMPLE_TAG }}
             ${{ env.LATEST_ARCH_TAG != '' && format('type=raw,value={0}', env.LATEST_ARCH_TAG) || '' }}
           labels: |
             org.opencontainers.image.title=V-Rising Server Docker Image
@@ -130,10 +137,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            BASE_TAG=${{ env.BASE_IMAGE_TAG }}
-            SOURCE_COMMIT=${{ github.sha }}
-            BUILD_DATE=${{ env.BUILD_DATE }}
-            WINE_VERSION=9.13
+            BASE_TAG=${{ env.BASE_TAG_FOR_PULL }}
           platforms: ${{ matrix.platform }}
           cache-from: type=gha,scope=${{ matrix.base_tag }}-${{ matrix.platform }}
           cache-to: type=gha,scope=${{ matrix.base_tag }}-${{ matrix.platform }},mode=max
@@ -158,29 +162,45 @@ jobs:
       - name: Generate manifest tag names
         id: manifest-tags
         run: |
-          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
-            echo "MANIFEST_TAG=${{ matrix.base_tag }}" >> $GITHUB_ENV
-            if [[ "${{ matrix.base_tag }}" == "bookworm" ]]; then
+          BASE_DIST=$(echo "${{ matrix.base_tag }}" | cut -d'-' -f1)
+          
+          if [[ "${{ github.ref_name }}" == "main" ]]; then
+            echo "SIMPLE_MANIFEST_TAG=$BASE_DIST" >> $GITHUB_ENV
+            echo "FULL_MANIFEST_TAG=${{ matrix.base_tag }}" >> $GITHUB_ENV
+            if [[ "${{ matrix.base_tag }}" == "trixie-20250407-slim_wine-staging-10.5" ]]; then
               echo "LATEST_TAG=latest" >> $GITHUB_ENV
               echo "HAS_LATEST_TAG=true" >> $GITHUB_ENV
             fi
           else
-            echo "MANIFEST_TAG=${{ matrix.base_tag }}_dev" >> $GITHUB_ENV
+            echo "SIMPLE_MANIFEST_TAG=${BASE_DIST}_dev" >> $GITHUB_ENV
+            echo "FULL_MANIFEST_TAG=${{ matrix.base_tag }}_dev" >> $GITHUB_ENV
             echo "HAS_LATEST_TAG=false" >> $GITHUB_ENV
           fi
       
       - name: Create and push multi-architecture manifests
         run: |
-          docker buildx imagetools create --tag ${{ env.REGISTRY_IMAGE }}:${{ env.MANIFEST_TAG }} \
-            ${{ env.REGISTRY_IMAGE }}:${{ matrix.base_tag }}${{ github.ref == 'refs/heads/main' && '' || '_dev' }}-amd64 \
-            ${{ env.REGISTRY_IMAGE }}:${{ matrix.base_tag }}${{ github.ref == 'refs/heads/main' && '' || '_dev' }}-arm64
-          
-          echo "::notice::Successfully created manifest for ${{ env.REGISTRY_IMAGE }}:${{ env.MANIFEST_TAG }}"
-          
+          BRANCH_SUFFIX=""
+          if [[ "${{ github.ref_name }}" == "dev" ]]; then
+            BRANCH_SUFFIX="_dev"
+          fi
+
+          # Create simple manifest tag (e.g., "trixie" or "trixie_dev")
+          SIMPLE_TAG_BASE=$(echo "${{ matrix.base_tag }}" | cut -d'-' -f1)
+          docker buildx imagetools create --tag ${{ env.REGISTRY_IMAGE }}:${{ env.SIMPLE_MANIFEST_TAG }} \
+            ${{ env.REGISTRY_IMAGE }}:${SIMPLE_TAG_BASE}${BRANCH_SUFFIX}-amd64 \
+            ${{ env.REGISTRY_IMAGE }}:${SIMPLE_TAG_BASE}${BRANCH_SUFFIX}-arm64
+          echo "::notice::Successfully created manifest for ${{ env.REGISTRY_IMAGE }}:${{ env.SIMPLE_MANIFEST_TAG }}"
+
+          # Create full manifest tag (e.g., "trixie-20250407-slim_wine-staging-10.5")
+          docker buildx imagetools create --tag ${{ env.REGISTRY_IMAGE }}:${{ env.FULL_MANIFEST_TAG }} \
+            ${{ env.REGISTRY_IMAGE }}:${{ matrix.base_tag }}${BRANCH_SUFFIX}-amd64 \
+            ${{ env.REGISTRY_IMAGE }}:${{ matrix.base_tag }}${BRANCH_SUFFIX}-arm64
+          echo "::notice::Successfully created manifest for ${{ env.REGISTRY_IMAGE }}:${{ env.FULL_MANIFEST_TAG }}"
+
           if [[ "${{ env.HAS_LATEST_TAG }}" == "true" ]]; then
-            docker buildx imagetools create --tag ${{ env.REGISTRY_IMAGE }}:${{ env.LATEST_TAG }} \
+            docker buildx imagetools create --tag ${{ env.REGISTRY_IMAGE }}:latest \
               ${{ env.REGISTRY_IMAGE }}:latest-amd64 \
               ${{ env.REGISTRY_IMAGE }}:latest-arm64
-              
             echo "::notice::Successfully created 'latest' multi-architecture manifest"
           fi
+
