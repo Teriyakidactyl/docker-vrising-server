@@ -8,6 +8,7 @@ on:
     paths:
       - 'Dockerfile'
       - '.github/workflows/**'
+      - 'scripts/**'
   pull_request:
     branches:
       - dev
@@ -15,6 +16,7 @@ on:
     paths:
       - 'Dockerfile'
       - '.github/workflows/**'
+      - 'scripts/**'
   workflow_dispatch:
 
 concurrency:
@@ -27,8 +29,8 @@ env:
   BASE_REGISTRY_IMAGE: ghcr.io/teriyakidactyl/docker-steamcmd-server
   # Define the base tags from steamcmd-server to build against
   MATRIX_BASE_TAGS: |
-    trixie-20250407-slim_wine-staging-10.5
-    bookworm-20250407-slim_wine-staging-10.5
+    trixie_wine-staging
+    bookworm_wine-staging
   MATRIX_PLATFORMS: |
     linux/amd64
     linux/arm64
@@ -92,21 +94,23 @@ jobs:
           fi
           echo "BRANCH_SUFFIX=$BRANCH_SUFFIX" >> $GITHUB_ENV
           
-          # This is the tag for the base image we are pulling from steamcmd-server
-          BASE_TAG_FOR_PULL="${{ matrix.base_tag }}${BRANCH_SUFFIX}-${ARCHITECTURE}"
+          # Pull the validated multi-architecture alias. Buildx chooses the
+          # requested architecture; derivatives should not reconstruct the
+          # base image's internal architecture tag format.
+          BASE_TAG_FOR_PULL="${{ matrix.base_tag }}${BRANCH_SUFFIX}"
           echo "BASE_TAG_FOR_PULL=$BASE_TAG_FOR_PULL" >> $GITHUB_ENV
           
           # Generate tag parts for the new v-rising image we are building
-          # Full tag: trixie-20250407-slim_wine-staging-10.5-amd64
+          # Preserve the shared-base compatibility alias in the derivative tag.
           FULL_TAG="${{ matrix.base_tag }}${BRANCH_SUFFIX}-${ARCHITECTURE}"
           echo "FULL_TAG=$FULL_TAG" >> $GITHUB_ENV
 
           # Simple tag: trixie-amd64
-          SIMPLE_TAG=$(echo "${{ matrix.base_tag }}" | cut -d'-' -f1)${BRANCH_SUFFIX}-$ARCHITECTURE
+          SIMPLE_TAG=$(echo "${{ matrix.base_tag }}" | cut -d'_' -f1)${BRANCH_SUFFIX}-$ARCHITECTURE
           echo "SIMPLE_TAG=$SIMPLE_TAG" >> $GITHUB_ENV
 
           # Latest tag (only for main branch on default base image)
-          if [[ "${{ github.ref_name }}" == "main" && "${{ matrix.base_tag }}" == "trixie-20250407-slim_wine-staging-10.5" ]]; then
+          if [[ "${{ github.ref_name }}" == "main" && "${{ matrix.base_tag }}" == "trixie_wine-staging" ]]; then
             echo "LATEST_ARCH_TAG=latest-$ARCHITECTURE" >> $GITHUB_ENV
           fi
           
@@ -163,12 +167,12 @@ jobs:
       - name: Generate manifest tag names
         id: manifest-tags
         run: |
-          BASE_DIST=$(echo "${{ matrix.base_tag }}" | cut -d'-' -f1)
+          BASE_DIST=$(echo "${{ matrix.base_tag }}" | cut -d'_' -f1)
           
           if [[ "${{ github.ref_name }}" == "main" ]]; then
             echo "SIMPLE_MANIFEST_TAG=$BASE_DIST" >> $GITHUB_ENV
             echo "FULL_MANIFEST_TAG=${{ matrix.base_tag }}" >> $GITHUB_ENV
-            if [[ "${{ matrix.base_tag }}" == "trixie-20250407-slim_wine-staging-10.5" ]]; then
+            if [[ "${{ matrix.base_tag }}" == "trixie_wine-staging" ]]; then
               echo "LATEST_TAG=latest" >> $GITHUB_ENV
               echo "HAS_LATEST_TAG=true" >> $GITHUB_ENV
             fi
@@ -186,13 +190,13 @@ jobs:
           fi
 
           # Create simple manifest tag (e.g., "trixie" or "trixie_dev")
-          SIMPLE_TAG_BASE=$(echo "${{ matrix.base_tag }}" | cut -d'-' -f1)
+          SIMPLE_TAG_BASE=$(echo "${{ matrix.base_tag }}" | cut -d'_' -f1)
           docker buildx imagetools create --tag ${{ env.REGISTRY_IMAGE }}:${{ env.SIMPLE_MANIFEST_TAG }} \
             ${{ env.REGISTRY_IMAGE }}:${SIMPLE_TAG_BASE}${BRANCH_SUFFIX}-amd64 \
             ${{ env.REGISTRY_IMAGE }}:${SIMPLE_TAG_BASE}${BRANCH_SUFFIX}-arm64
           echo "::notice::Successfully created manifest for ${{ env.REGISTRY_IMAGE }}:${{ env.SIMPLE_MANIFEST_TAG }}"
 
-          # Create full manifest tag (e.g., "trixie-20250407-slim_wine-staging-10.5")
+          # Create full manifest tag (e.g., "trixie_wine-staging")
           docker buildx imagetools create --tag ${{ env.REGISTRY_IMAGE }}:${{ env.FULL_MANIFEST_TAG }} \
             ${{ env.REGISTRY_IMAGE }}:${{ matrix.base_tag }}${BRANCH_SUFFIX}-amd64 \
             ${{ env.REGISTRY_IMAGE }}:${{ matrix.base_tag }}${BRANCH_SUFFIX}-arm64

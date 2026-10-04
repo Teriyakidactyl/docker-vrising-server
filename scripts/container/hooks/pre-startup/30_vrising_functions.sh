@@ -10,6 +10,53 @@ DEFAULT_SETTINGS_DIR="$APP_FILES/VRisingServer_Data/StreamingAssets/Settings"
 HOST_SETTINGS_FILE="$SETTINGS_DIR/ServerHostSettings.json"
 GAME_SETTINGS_FILE="$SETTINGS_DIR/ServerGameSettings.json"
 
+# SteamCMD updates the application before derivative hooks run. That means a
+# game update may recreate a real directory where we previously had a symlink.
+# Reconcile the topology on every start so named volumes, bind mounts, and game
+# updates all converge on the same persistent paths.
+#
+# Existing files are migrated without clobbering already-persistent operator
+# state. An unexpected symlink is treated as an ownership conflict instead of
+# being silently replaced.
+persist_directory() {
+    local source_path="$1"
+    local target_path="$2"
+    local current_target
+    local current_target_path
+
+    mkdir -p "$(dirname "$source_path")" "$target_path"
+
+    if [ -L "$source_path" ]; then
+        current_target="$(readlink "$source_path")"
+        if [[ "$current_target" = /* ]]; then
+            current_target_path="$(realpath -m "$current_target")"
+        else
+            current_target_path="$(realpath -m "$(dirname "$source_path")/$current_target")"
+        fi
+
+        if [ "$current_target_path" != "$(realpath -m "$target_path")" ]; then
+            log "ERROR: $source_path points to $current_target; expected $target_path" "30_vrising_functions.sh"
+            return 1
+        fi
+        return 0
+    fi
+
+    if [ -e "$source_path" ]; then
+        if [ ! -d "$source_path" ]; then
+            log "ERROR: $source_path exists but is not a directory" "30_vrising_functions.sh"
+            return 1
+        fi
+        cp -a -n "$source_path/." "$target_path/"
+        rm -rf "$source_path"
+    fi
+
+    ln -s "$target_path" "$source_path"
+}
+
+persist_directory "$DEFAULT_SETTINGS_DIR" "$SETTINGS_DIR"
+persist_directory "$APP_FILES/logs" "$WORLD_FILES/logs"
+persist_directory "$LOGS/vrising" "$WORLD_FILES/logs"
+
 # --- First-Run Initialization ---
 # This remains the same as it's a necessary bootstrapping step.
 if [ ! -f "$HOST_SETTINGS_FILE" ]; then
