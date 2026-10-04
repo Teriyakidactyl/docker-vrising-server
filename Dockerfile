@@ -5,38 +5,29 @@
 # Reference: https://github.com/StunlockStudios/vrising-dedicated-server-instructions/blob/master/1.1.x-pc/INSTRUCTIONS.md
 # Wine: https://steamcommunity.com/sharedfiles/filedetails/?id=2880599658
 
-# The BASE_TAG argument allows specifying which version of the base image to use.
-ARG BASE_TAG=trixie-20250407-slim_wine-staging-10.5
-FROM ghcr.io/teriyakidactyl/docker-steamcmd-server:${BASE_TAG}
+# Follow the shared base's supported Wine-staging alias. Wine version and
+# architecture policy belong to docker-steamcmd-server, not this derivative.
+ARG BASE_IMAGE=ghcr.io/teriyakidactyl/docker-steamcmd-server
+ARG BASE_TAG=trixie_wine-staging
+FROM ${BASE_IMAGE}:${BASE_TAG}
+
+ARG BASE_IMAGE
+ARG BASE_TAG
 
 # Labels for metadata
 LABEL org.opencontainers.image.title="V-Rising Server" \
       org.opencontainers.image.description="V-Rising dedicated server based on docker-steamcmd-server" \
-      org.opencontainers.image.vendor="TeriyakiDactyl"
+      org.opencontainers.image.vendor="TeriyakiDactyl" \
+      org.opencontainers.image.base.name="${BASE_IMAGE}:${BASE_TAG}"
 
 # --- Switch to ROOT user to install dependencies ---
 USER root
 
-# --- Install jq and create directories/links for persistence ---
+# Persistence topology is intentionally established by the pre-start hook, not
+# here. /app and /world are commonly runtime mounts, so image-layer symlinks
+# beneath them disappear as soon as those volumes are attached.
 RUN apt-get update && apt-get install -y --no-install-recommends jq && \
-    # Clean up apt cache to keep image size down
-    rm -rf /var/lib/apt/lists/* && \
-    # Create persistent directories for settings, logs, and the Wine prefix
-    mkdir -p "$WORLD_FILES/Settings" \
-             "$WORLD_FILES/logs" \
-             "$WORLD_FILES/wineprefix" \
-             "$APP_FILES/VRisingServer_Data/StreamingAssets/Settings" && \
-    # Link the persistent Settings folder to where the game expects it
-    ln -sf "$WORLD_FILES/Settings" "$APP_FILES/VRisingServer_Data/StreamingAssets/Settings" && \
-    \
-    # --- LOGGING SETUP (Conan-Style) ---
-    # 1. Link the app's default log directory to our persistent logs folder.
-    ln -sf "$WORLD_FILES/logs" "$APP_FILES/logs" && \
-    # 2. Link the entire persistent logs directory into the main container log directory.
-    ln -sf "$WORLD_FILES/logs" "$LOGS/vrising" && \
-    \
-    # Ensure the container user owns all relevant directories.
-    chown -R ${CONTAINER_USER}:${CONTAINER_USER} "$WORLD_FILES" "$APP_FILES" "$LOGS"
+    rm -rf /var/lib/apt/lists/*
 
 # --- Switch back to the non-root user for security ---
 USER ${CONTAINER_USER}
