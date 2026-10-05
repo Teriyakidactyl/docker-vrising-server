@@ -1,33 +1,28 @@
-version: '3.8'
-
 services:
   vrising-server:
-    # This tells Docker to look for the Dockerfile in the current directory and build it.
     build: .
     container_name: vrising-server
     restart: unless-stopped
     tty: true
-
     environment:
-      # --- Server configuration ---
-      # Match these to your preferences.
-      - SERVER_NAME=My V-Rising Docker Server
-      - WORLD_NAME=MyServerWorld
-      - SERVER_PASS=SuperSecret
-      - SERVER_PUBLIC=true # 'true' or 'false'
-      - SERVER_PORT=9876
-      - QUERY_PORT=9877
-
+      SERVER_NAME: ${SERVER_NAME:-My V-Rising Docker Server}
+      WORLD_NAME: ${WORLD_NAME:-MyServerWorld}
+      SERVER_PASS: ${SERVER_PASS:-SuperSecret}
+      SERVER_PORT: ${SERVER_PORT:-9876}
+      QUERY_PORT: ${QUERY_PORT:-9877}
+      MAX_USERS: ${MAX_USERS:-40}
+      LIST_ON_STEAM: ${LIST_ON_STEAM:-true}
+      LIST_ON_EOS: ${LIST_ON_EOS:-true}
+      SERVER_SECURE: ${SERVER_SECURE:-true}
+      RCON_ENABLED: ${RCON_ENABLED:-false}
+      RCON_PASS: ${RCON_PASS:-}
+      RCON_PORT: ${RCON_PORT:-25575}
     volumes:
-      # Mounts a local directory or Docker volume to store game saves and settings.
-      - vrising_data:/world # This maps to $WORLD_FILES inside the container.
-      # Mounts a volume for the server application files downloaded by SteamCMD.
-      - vrising_app:/app # This maps to $APP_FILES inside the container.
-
+      - vrising_data:/world
+      - vrising_app:/app
     ports:
-      # Maps the container ports to your host machine.
-      - "9876:9876/udp" # Main UDP Game Port
-      - "9877:9877/udp" # Query Port
+      - "${SERVER_PORT:-9876}:${SERVER_PORT:-9876}/udp"
+      - "${QUERY_PORT:-9877}:${QUERY_PORT:-9877}/udp"
 
 volumes:
   vrising_data:
