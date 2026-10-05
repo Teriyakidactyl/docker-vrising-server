@@ -2,76 +2,91 @@ name: Build V-Rising Server Docker Images
 
 on:
   push:
-    branches:
-      - dev
-      - main
+    branches: [dev, main]
     paths:
       - 'Dockerfile'
+      - 'docker-compose.yml'
       - '.github/workflows/**'
       - 'scripts/**'
+      - 'tests/**'
   pull_request:
-    branches:
-      - dev
-      - main
+    branches: [dev, main]
     paths:
       - 'Dockerfile'
+      - 'docker-compose.yml'
+      - 'README.md'
       - '.github/workflows/**'
       - 'scripts/**'
+      - 'tests/**'
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
-  # Hardcode the lowercase repository owner name
   REGISTRY_IMAGE: ghcr.io/teriyakidactyl/docker-vrising-server
   BASE_REGISTRY_IMAGE: ghcr.io/teriyakidactyl/docker-steamcmd-server
-  # Define the base tags from steamcmd-server to build against
-  MATRIX_BASE_TAGS: |
-    trixie_wine-staging
-    bookworm_wine-staging
-  MATRIX_PLATFORMS: |
-    linux/amd64
-    linux/arm64
 
 jobs:
-  setup:
+  quality:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      base-tags: ${{ steps.set-matrix.outputs.base-tags }}
-      platforms: ${{ steps.set-matrix.outputs.platforms }}
+    timeout-minutes: 10
     steps:
-      - id: set-matrix
-        name: Process matrix configurations
+      - uses: actions/checkout@v4
+
+      - name: Validate shell scripts
         run: |
-          BASE_TAGS=$(echo '${{ env.MATRIX_BASE_TAGS }}' | grep -v '^$' | awk '{print "\""$0"\""}' | paste -sd, | awk '{print "["$0"]"}')
-          PLATFORMS=$(echo '${{ env.MATRIX_PLATFORMS }}' | grep -v '^$' | awk '{print "\""$0"\""}' | paste -sd, | awk '{print "["$0"]"}')
-          echo "base-tags=$BASE_TAGS" >> $GITHUB_OUTPUT
-          echo "platforms=$PLATFORMS" >> $GITHUB_OUTPUT
+          sudo apt-get update
+          sudo apt-get install -y shellcheck gettext-base jq
+          find scripts tests -type f -name '*.sh' -print0 | xargs -0 -r bash -n
+          find scripts tests -type f -name '*.sh' -print0 | xargs -0 -r shellcheck --severity=error
+
+      - name: Lint Dockerfile
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: Dockerfile
+          failure-threshold: error
+
+      - name: Test V Rising contracts
+        run: |
+          for test_script in tests/test_*.sh; do
+            bash "$test_script"
+          done
+
+      - name: Validate Compose
+        run: docker compose config >/dev/null
 
   build:
-    needs: setup
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
+    needs: quality
+    runs-on: ${{ matrix.platform == 'linux/arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    timeout-minutes: 90
     strategy:
-      matrix:
-        base_tag: ${{ fromJson(needs.setup.outputs.base-tags) }}
-        platform: ${{ fromJson(needs.setup.outputs.platforms) }}
       fail-fast: false
+      matrix:
+        base_tag:
+          - trixie_wine-staging
+          - bookworm_wine-staging
+        platform:
+          - linux/amd64
+          - linux/arm64
 
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: ${{ matrix.platform }}
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - name: Verify GHCR publishing credential
+        if: github.event_name != 'pull_request'
+        env:
+          GHCR_PAT: ${{ secrets.GHCR_PAT }}
+        run: |
+          if [ -z "$GHCR_PAT" ]; then
+            echo "::error::GHCR_PAT is required to publish child images to the existing GHCR packages"
+            exit 1
+          fi
 
       - name: Log in to GitHub Container Registry
         if: github.event_name != 'pull_request'
@@ -82,42 +97,33 @@ jobs:
           password: ${{ secrets.GHCR_PAT }}
 
       - name: Prepare tag variables
-        id: prep-tags
         run: |
-          ARCHITECTURE=$(echo ${{ matrix.platform }} | cut -d'/' -f2)
-          echo "ARCHITECTURE=$ARCHITECTURE" >> $GITHUB_ENV
-          
-          if [[ "${{ github.ref_name }}" == "dev" ]]; then
+          ARCHITECTURE=$(echo '${{ matrix.platform }}' | cut -d'/' -f2)
+          echo "ARCHITECTURE=$ARCHITECTURE" >> "$GITHUB_ENV"
+
+          if [[ "${{ github.ref }}" == "refs/heads/dev" ]]; then
             BRANCH_SUFFIX="_dev"
           else
             BRANCH_SUFFIX=""
           fi
-          echo "BRANCH_SUFFIX=$BRANCH_SUFFIX" >> $GITHUB_ENV
-          
-          # Pull the validated multi-architecture alias. Buildx chooses the
-          # requested architecture; derivatives should not reconstruct the
-          # base image's internal architecture tag format.
-          BASE_TAG_FOR_PULL="${{ matrix.base_tag }}${BRANCH_SUFFIX}"
-          echo "BASE_TAG_FOR_PULL=$BASE_TAG_FOR_PULL" >> $GITHUB_ENV
-          
-          # Generate tag parts for the new v-rising image we are building
-          # Preserve the shared-base compatibility alias in the derivative tag.
-          FULL_TAG="${{ matrix.base_tag }}${BRANCH_SUFFIX}-${ARCHITECTURE}"
-          echo "FULL_TAG=$FULL_TAG" >> $GITHUB_ENV
+          echo "BRANCH_SUFFIX=$BRANCH_SUFFIX" >> "$GITHUB_ENV"
 
-          # Simple tag: trixie-amd64
-          SIMPLE_TAG=$(echo "${{ matrix.base_tag }}" | cut -d'_' -f1)${BRANCH_SUFFIX}-$ARCHITECTURE
-          echo "SIMPLE_TAG=$SIMPLE_TAG" >> $GITHUB_ENV
+          BASE_TAG_FOR_PULL="${{ matrix.base_tag }}$BRANCH_SUFFIX"
+          echo "BASE_TAG_FOR_PULL=$BASE_TAG_FOR_PULL" >> "$GITHUB_ENV"
 
-          # Latest tag (only for main branch on default base image)
-          if [[ "${{ github.ref_name }}" == "main" && "${{ matrix.base_tag }}" == "trixie_wine-staging" ]]; then
-            echo "LATEST_ARCH_TAG=latest-$ARCHITECTURE" >> $GITHUB_ENV
+          BASE_DIST=$(echo '${{ matrix.base_tag }}' | cut -d'_' -f1)
+          echo "FULL_TAG=${{ matrix.base_tag }}$BRANCH_SUFFIX-$ARCHITECTURE" >> "$GITHUB_ENV"
+          echo "SIMPLE_TAG=$BASE_DIST$BRANCH_SUFFIX-$ARCHITECTURE" >> "$GITHUB_ENV"
+
+          if [[ "${{ github.ref }}" == "refs/heads/main" && "${{ matrix.base_tag }}" == "trixie_wine-staging" ]]; then
+            echo "LATEST_ARCH_TAG=latest-$ARCHITECTURE" >> "$GITHUB_ENV"
+          else
+            echo "LATEST_ARCH_TAG=" >> "$GITHUB_ENV"
           fi
-          
-          echo "BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_ENV
 
-      - name: Generate Docker metadata
-        id: meta
+          echo "BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_ENV"
+
+      - id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY_IMAGE }}
@@ -127,14 +133,15 @@ jobs:
             ${{ env.LATEST_ARCH_TAG != '' && format('type=raw,value={0}', env.LATEST_ARCH_TAG) || '' }}
           labels: |
             org.opencontainers.image.title=V-Rising Server Docker Image
-            org.opencontainers.image.description=Docker image for V-Rising dedicated server using Wine.
+            org.opencontainers.image.description=V-Rising dedicated server based on docker-steamcmd-server
             org.opencontainers.image.vendor=TeriyakiDactyl
             org.opencontainers.image.version=${{ github.ref_name }}
             org.opencontainers.image.created=${{ env.BUILD_DATE }}
             org.opencontainers.image.revision=${{ github.sha }}
+            com.example.base.image=${{ env.BASE_REGISTRY_IMAGE }}:${{ env.BASE_TAG_FOR_PULL }}
 
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v5
+      - name: Build and push image
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile
@@ -148,64 +155,63 @@ jobs:
           cache-to: type=gha,scope=${{ matrix.base_tag }}-${{ matrix.platform }},mode=max
 
   create-manifest:
-    needs: [setup, build]
+    needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 15
     if: github.event_name != 'pull_request'
     strategy:
       matrix:
-        base_tag: ${{ fromJson(needs.setup.outputs.base-tags) }}
-    
+        base_tag:
+          - trixie_wine-staging
+          - bookworm_wine-staging
+
     steps:
-      - name: Login to GitHub Container Registry
+      - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GHCR_PAT }}
-          
-      - name: Generate manifest tag names
-        id: manifest-tags
+
+      - name: Prepare manifest tags
         run: |
-          BASE_DIST=$(echo "${{ matrix.base_tag }}" | cut -d'_' -f1)
-          
-          if [[ "${{ github.ref_name }}" == "main" ]]; then
-            echo "SIMPLE_MANIFEST_TAG=$BASE_DIST" >> $GITHUB_ENV
-            echo "FULL_MANIFEST_TAG=${{ matrix.base_tag }}" >> $GITHUB_ENV
-            if [[ "${{ matrix.base_tag }}" == "trixie_wine-staging" ]]; then
-              echo "LATEST_TAG=latest" >> $GITHUB_ENV
-              echo "HAS_LATEST_TAG=true" >> $GITHUB_ENV
-            fi
+          BASE_DIST=$(echo '${{ matrix.base_tag }}' | cut -d'_' -f1)
+
+          if [[ "${{ github.ref }}" == "refs/heads/dev" ]]; then
+            BRANCH_SUFFIX="_dev"
           else
-            echo "SIMPLE_MANIFEST_TAG=${BASE_DIST}_dev" >> $GITHUB_ENV
-            echo "FULL_MANIFEST_TAG=${{ matrix.base_tag }}_dev" >> $GITHUB_ENV
-            echo "HAS_LATEST_TAG=false" >> $GITHUB_ENV
+            BRANCH_SUFFIX=""
           fi
-      
+
+          echo "SIMPLE_MANIFEST_TAG=$BASE_DIST$BRANCH_SUFFIX" >> "$GITHUB_ENV"
+          echo "FULL_MANIFEST_TAG=${{ matrix.base_tag }}$BRANCH_SUFFIX" >> "$GITHUB_ENV"
+
+          if [[ "${{ github.ref }}" == "refs/heads/main" && "${{ matrix.base_tag }}" == "trixie_wine-staging" ]]; then
+            echo "HAS_LATEST_TAG=true" >> "$GITHUB_ENV"
+          else
+            echo "HAS_LATEST_TAG=false" >> "$GITHUB_ENV"
+          fi
+
       - name: Create and push multi-architecture manifests
         run: |
-          BRANCH_SUFFIX=""
-          if [[ "${{ github.ref_name }}" == "dev" ]]; then
-            BRANCH_SUFFIX="_dev"
-          fi
+          docker buildx imagetools create             --tag "${{ env.REGISTRY_IMAGE }}:${{ env.SIMPLE_MANIFEST_TAG }}"             "${{ env.REGISTRY_IMAGE }}:${{ env.SIMPLE_MANIFEST_TAG }}-amd64"             "${{ env.REGISTRY_IMAGE }}:${{ env.SIMPLE_MANIFEST_TAG }}-arm64"
 
-          # Create simple manifest tag (e.g., "trixie" or "trixie_dev")
-          SIMPLE_TAG_BASE=$(echo "${{ matrix.base_tag }}" | cut -d'_' -f1)
-          docker buildx imagetools create --tag ${{ env.REGISTRY_IMAGE }}:${{ env.SIMPLE_MANIFEST_TAG }} \
-            ${{ env.REGISTRY_IMAGE }}:${SIMPLE_TAG_BASE}${BRANCH_SUFFIX}-amd64 \
-            ${{ env.REGISTRY_IMAGE }}:${SIMPLE_TAG_BASE}${BRANCH_SUFFIX}-arm64
-          echo "::notice::Successfully created manifest for ${{ env.REGISTRY_IMAGE }}:${{ env.SIMPLE_MANIFEST_TAG }}"
-
-          # Create full manifest tag (e.g., "trixie_wine-staging")
-          docker buildx imagetools create --tag ${{ env.REGISTRY_IMAGE }}:${{ env.FULL_MANIFEST_TAG }} \
-            ${{ env.REGISTRY_IMAGE }}:${{ matrix.base_tag }}${BRANCH_SUFFIX}-amd64 \
-            ${{ env.REGISTRY_IMAGE }}:${{ matrix.base_tag }}${BRANCH_SUFFIX}-arm64
-          echo "::notice::Successfully created manifest for ${{ env.REGISTRY_IMAGE }}:${{ env.FULL_MANIFEST_TAG }}"
+          docker buildx imagetools create             --tag "${{ env.REGISTRY_IMAGE }}:${{ env.FULL_MANIFEST_TAG }}"             "${{ env.REGISTRY_IMAGE }}:${{ env.FULL_MANIFEST_TAG }}-amd64"             "${{ env.REGISTRY_IMAGE }}:${{ env.FULL_MANIFEST_TAG }}-arm64"
 
           if [[ "${{ env.HAS_LATEST_TAG }}" == "true" ]]; then
-            docker buildx imagetools create --tag ${{ env.REGISTRY_IMAGE }}:latest \
-              ${{ env.REGISTRY_IMAGE }}:latest-amd64 \
-              ${{ env.REGISTRY_IMAGE }}:latest-arm64
-            echo "::notice::Successfully created 'latest' multi-architecture manifest"
+            docker buildx imagetools create               --tag "${{ env.REGISTRY_IMAGE }}:latest"               "${{ env.REGISTRY_IMAGE }}:latest-amd64"               "${{ env.REGISTRY_IMAGE }}:latest-arm64"
           fi
 
+  notify:
+    needs: create-manifest
+    runs-on: ubuntu-latest
+    if: always() && github.event_name != 'pull_request'
+    steps:
+      - name: Report workflow status
+        run: |
+          if [[ "${{ needs.create-manifest.result }}" == "success" ]]; then
+            echo "::notice::V Rising images successfully built and pushed"
+          else
+            echo "::error::Failed to build or publish V Rising images"
+            exit 1
+          fi

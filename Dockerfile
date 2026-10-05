@@ -37,6 +37,7 @@ ENV \
     # --- Game identification ---
     APP_NAME="vrising" \
     APP_EXE="VRisingServer.exe" \
+    APP_ARGS_FILE="/usr/local/share/vrising/vrising.args" \
     STEAM_SERVER_APPID="1829350" \
     STEAM_PLATFORM_TYPE="windows" \
     \
@@ -66,17 +67,10 @@ ENV \
     LAN_MODE="true"
 
 
-# --- Define the command line arguments for the server ---
-ENV APP_ARGS='\
--persistentDataPath $WORLD_FILES \
--logFile "$WORLD_FILES/logs/$APP_EXE.log"'
-
-# -saveName "$WORLD_NAME" \
-# -password "$SERVER_PASS" \
-# -serverName "$SERVER_NAME" \
 
 # Copy game-specific hook scripts into the container
-COPY --chown=${CONTAINER_USER}:${CONTAINER_USER} scripts/container/hooks/pre-startup/30_vrising_functions.sh ${HOOK_DIRECTORIES}/pre-startup/
+COPY --chown=${CONTAINER_USER}:${CONTAINER_USER} --chmod=0644 scripts/container/vrising.args /usr/local/share/vrising/vrising.args
+COPY --chown=${CONTAINER_USER}:${CONTAINER_USER} --chmod=0755 scripts/container/hooks/pre-startup/30_vrising_functions.sh ${HOOK_DIRECTORIES}/pre-startup/30_vrising_functions.sh
 
 # --- Expose V-Rising ports ---
 EXPOSE $SERVER_PORT/udp $QUERY_PORT/udp

@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -Eeo pipefail
+
 # This script manages the V-Rising server's JSON configuration files
 # using a data-driven approach for maintainability.
 
@@ -91,7 +93,11 @@ apply_settings() {
             # Sanitize variable name for jq
             local jq_var_name="${env_var,,}"
 
-            log "  - Setting ${path} to ${value}" "30_vrising_functions.sh"
+            if [[ "$env_var" == "SERVER_PASS" || "$env_var" == "RCON_PASS" ]]; then
+                log "  - Setting ${path} to <redacted>" "30_vrising_functions.sh"
+            else
+                log "  - Setting ${path} to ${value}" "30_vrising_functions.sh"
+            fi
             
             # Add the appropriate jq argument type (--arg or --argjson)
             if [ "$type" == "json" ]; then
@@ -154,7 +160,10 @@ fi
 log "V-Rising configuration applied. Final settings:" "30_vrising_functions.sh"
 if [ -f "$HOST_SETTINGS_FILE" ]; then
     log "--- ServerHostSettings.json ---" "30_vrising_functions.sh"
-    jq . "$HOST_SETTINGS_FILE" | log_stdout "30_vrising_functions.sh"
+    jq '
+        if has("Password") then .Password = "<redacted>" else . end
+        | if (.Rcon? | type) == "object" and (.Rcon | has("Password")) then .Rcon.Password = "<redacted>" else . end
+    ' "$HOST_SETTINGS_FILE" | log_stdout "30_vrising_functions.sh"
 fi
 if [ -f "$GAME_SETTINGS_FILE" ]; then
     log "--- ServerGameSettings.json ---" "30_vrising_functions.sh"

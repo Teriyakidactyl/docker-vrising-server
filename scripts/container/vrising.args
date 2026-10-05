@@ -1,0 +1,4 @@
+-persistentDataPath
+$WORLD_FILES
+-logFile
+$WORLD_FILES/logs/$APP_EXE.log
